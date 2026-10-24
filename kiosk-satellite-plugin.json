@@ -1,0 +1,581 @@
+{
+  "schemaVersion": 1,
+  "apiVersion": 1,
+  "id": "live-activities",
+  "name": "Live Activities",
+  "version": "0.1.0",
+  "minAndroidSdk": 26,
+  "entryClass": "liveactivities.ks.LiveActivitiesPlugin",
+  "description": "Shows Home Assistant live activities as native cards over the screensaver: appliances, vacuums, climate, charging, solar, travel times and any other entity. Each card shows a status, a progress bar or current and target values, a Live or Reconnecting label and optional controls.",
+  "author": "jtscott",
+  "license": "Apache-2.0",
+  "icon": "icon.png",
+  "capabilities": [
+    "overlay",
+    "host.read",
+    "ha"
+  ],
+  "groups": [
+    {
+      "title": "Activities"
+    },
+    {
+      "title": "Card"
+    },
+    {
+      "title": "Progress bar"
+    },
+    {
+      "title": "Layout"
+    }
+  ],
+  "settings": [
+    {
+      "key": "activities",
+      "type": "list",
+      "title": "Activities",
+      "group": "Activities",
+      "addTitle": "Add activity",
+      "maxItems": 8,
+      "row": {
+        "title": "entity",
+        "subtitle": [
+          "title",
+          "type"
+        ],
+        "icon": "icon"
+      },
+      "default": [],
+      "description": "Cards show in this order. Together the activities can read up to 16 entities, the most Kiosk Satellite follows for one plugin.",
+      "fields": [
+        {
+          "key": "type",
+          "type": "select",
+          "title": "Type",
+          "options": [
+            "Appliance",
+            "Vacuum",
+            "Climate",
+            "Custom"
+          ],
+          "default": "Appliance",
+          "description": "A starting point. Vacuum and Climate read their entity's own attributes and offer its controls. Appliance and Custom show what Values sets and can run a script or button."
+        },
+        {
+          "key": "entity",
+          "type": "entity",
+          "title": "Entity",
+          "required": true,
+          "description": "Appliance: its status or operation state sensor. Vacuum: the vacuum. Climate: the thermostat. Custom: any entity. Its state is the card's status unless Values sets one."
+        },
+        {
+          "key": "enabled",
+          "type": "boolean",
+          "title": "Enabled",
+          "default": true
+        },
+        {
+          "key": "title",
+          "type": "string",
+          "title": "Title",
+          "default": "",
+          "description": "Empty uses the entity's name."
+        },
+        {
+          "key": "icon",
+          "type": "icon",
+          "title": "Icon",
+          "default": "",
+          "description": "Empty uses the entity's icon, if it has one, or the type's."
+        },
+        {
+          "key": "layout",
+          "type": "select",
+          "title": "Layout",
+          "options": [
+            "Automatic",
+            "Status",
+            "Progress",
+            "Current/target"
+          ],
+          "default": "Automatic",
+          "description": "Automatic shows current and target for Climate, a progress bar when Values has a Progress row, otherwise the status and values."
+        },
+        {
+          "key": "values",
+          "type": "list",
+          "title": "Values",
+          "addTitle": "Add value",
+          "maxItems": 6,
+          "row": {
+            "title": "show",
+            "subtitle": [
+              "attribute",
+              "entity"
+            ]
+          },
+          "default": [],
+          "description": "What the card shows besides the entity's state, such as time left, a progress sensor or a battery level. Each kind uses its first row.",
+          "fields": [
+            {
+              "key": "show",
+              "type": "select",
+              "title": "Show as",
+              "options": [
+                "Primary value",
+                "Secondary value",
+                "Progress",
+                "Status",
+                "Current",
+                "Target"
+              ],
+              "default": "Primary value",
+              "description": "Primary: large, on the right. Secondary: under it, with its label. Progress: the bar. Status: under the title. Current and Target: the Current/target layout."
+            },
+            {
+              "key": "entity",
+              "type": "entity",
+              "title": "Entity",
+              "description": "Empty reads the activity's entity. A finish time counts down; a duration shows as 1h 4m."
+            },
+            {
+              "key": "attribute",
+              "type": "string",
+              "title": "Attribute",
+              "default": "",
+              "description": "Empty reads the state. Otherwise an attribute name as Developer Tools > States lists it, such as fan_speed."
+            },
+            {
+              "key": "label",
+              "type": "string",
+              "title": "Label",
+              "default": "",
+              "visibleWhen": {
+                "key": "show",
+                "equals": [
+                  "Secondary value",
+                  "Current",
+                  "Target"
+                ]
+              },
+              "description": "Names the value, such as Battery for Battery 80%."
+            },
+            {
+              "key": "unit",
+              "type": "string",
+              "title": "Unit",
+              "default": "",
+              "visibleWhen": {
+                "key": "show",
+                "notEquals": "Progress"
+              },
+              "description": "Empty uses the entity's unit, which only its state has. Set one for an attribute, such as %."
+            },
+            {
+              "key": "min",
+              "type": "number",
+              "title": "Empty at",
+              "default": 0,
+              "min": 0,
+              "max": 10000,
+              "step": 1,
+              "input": "field",
+              "visibleWhen": {
+                "key": "show",
+                "equals": "Progress"
+              },
+              "description": "The value of an empty bar."
+            },
+            {
+              "key": "max",
+              "type": "number",
+              "title": "Full at",
+              "default": 100,
+              "min": 0,
+              "max": 10000,
+              "step": 1,
+              "input": "field",
+              "visibleWhen": {
+                "key": "show",
+                "equals": "Progress"
+              },
+              "description": "The value of a full bar, such as 100 for a percentage."
+            }
+          ]
+        },
+        {
+          "key": "showWhen",
+          "type": "select",
+          "title": "Show",
+          "options": [
+            "Always",
+            "When state is",
+            "When state is not"
+          ],
+          "default": "Always",
+          "description": "When the card shows, from an entity's state in Home Assistant."
+        },
+        {
+          "key": "whenEntity",
+          "type": "entity",
+          "title": "Condition entity",
+          "visibleWhen": {
+            "key": "showWhen",
+            "notEquals": "Always"
+          },
+          "description": "Empty uses the activity's entity."
+        },
+        {
+          "key": "whenStates",
+          "type": "string",
+          "title": "States",
+          "default": "",
+          "visibleWhen": {
+            "key": "showWhen",
+            "notEquals": "Always"
+          },
+          "description": "States as Developer Tools > States shows them, separated by commas, such as run, pause or cleaning, returning. unknown and unavailable show the card only when listed under When state is; When state is not always hides them."
+        },
+        {
+          "key": "controls",
+          "type": "boolean",
+          "title": "Controls",
+          "default": false,
+          "visibleWhen": {
+            "key": "type",
+            "equals": "Climate"
+          },
+          "description": "Cooler and Warmer, within the thermostat's limits and step."
+        },
+        {
+          "key": "vacuumControls",
+          "type": "list",
+          "title": "Controls",
+          "addTitle": "Add control",
+          "maxItems": 5,
+          "row": {
+            "title": "control"
+          },
+          "default": [],
+          "visibleWhen": {
+            "key": "type",
+            "equals": "Vacuum"
+          },
+          "description": "The vacuum's buttons, in this order. Each shows only when the vacuum supports it and it applies: Pause while cleaning (Resume while paused), Dock away from the dock, Locate any time, Start from the dock or idle, Stop while cleaning, paused or returning.",
+          "fields": [
+            {
+              "key": "control",
+              "type": "select",
+              "title": "Control",
+              "options": [
+                "Pause",
+                "Dock",
+                "Locate",
+                "Start",
+                "Stop"
+              ],
+              "default": "Pause"
+            }
+          ]
+        },
+        {
+          "key": "action",
+          "type": "entity",
+          "title": "Action",
+          "visibleWhen": {
+            "key": "type",
+            "equals": [
+              "Appliance",
+              "Custom"
+            ]
+          },
+          "description": "A script or button the card can run, such as one that pauses the appliance. Empty for none."
+        },
+        {
+          "key": "actionLabel",
+          "type": "string",
+          "title": "Action label",
+          "default": "",
+          "visibleWhen": {
+            "key": "action",
+            "notEmpty": true
+          },
+          "description": "Empty uses the script or button's ID, such as Pause dishwasher."
+        }
+      ]
+    },
+    {
+      "key": "heading",
+      "type": "select",
+      "title": "Heading",
+      "default": "Home Assistant",
+      "options": [
+        "Home Assistant",
+        "Integration",
+        "Entity name",
+        "Custom"
+      ],
+      "group": "Card",
+      "description": "The label at each card's top left. Integration names the integration behind the card's entity, such as LG ThinQ, read from Home Assistant; until it is known, or if it cannot be read, the card says Home Assistant. Entity name is the entity's name in Home Assistant."
+    },
+    {
+      "key": "headingText",
+      "type": "string",
+      "title": "Heading text",
+      "default": "",
+      "group": "Card",
+      "visibleWhen": {
+        "key": "heading",
+        "equals": "Custom"
+      },
+      "description": "Shown on every card. Empty shows only the icon."
+    },
+    {
+      "key": "buttonStyle",
+      "type": "select",
+      "title": "Buttons",
+      "default": "Icon and label",
+      "options": [
+        "Icon and label",
+        "Icon only"
+      ],
+      "group": "Card",
+      "description": "How card buttons look. Icon only keeps each button's name for screen readers."
+    },
+    {
+      "key": "palette",
+      "type": "select",
+      "title": "Colors",
+      "default": "Theme",
+      "options": [
+        "Theme",
+        "Custom"
+      ],
+      "group": "Card",
+      "description": "Theme follows Kiosk Satellite's light and dark themes. Custom uses the colors below in both, starting from the light theme's. The Live, Reconnecting and Unavailable colors always follow the theme, since they carry meaning."
+    },
+    {
+      "key": "background",
+      "type": "color",
+      "title": "Background",
+      "default": "#EFEDE9",
+      "group": "Card",
+      "visibleWhen": {
+        "key": "palette",
+        "equals": "Custom"
+      },
+      "description": "The card and the +N more button."
+    },
+    {
+      "key": "outline",
+      "type": "color",
+      "title": "Outline",
+      "default": "#E3E0DA",
+      "group": "Card",
+      "visibleWhen": {
+        "key": "palette",
+        "equals": "Custom"
+      },
+      "description": "The hairline around each card."
+    },
+    {
+      "key": "text",
+      "type": "color",
+      "title": "Text",
+      "default": "#444444",
+      "group": "Card",
+      "visibleWhen": {
+        "key": "palette",
+        "equals": "Custom"
+      },
+      "description": "Titles, values and the +N more button."
+    },
+    {
+      "key": "secondaryText",
+      "type": "color",
+      "title": "Secondary text",
+      "default": "#5D6066",
+      "group": "Card",
+      "visibleWhen": {
+        "key": "palette",
+        "equals": "Custom"
+      },
+      "description": "The heading, status, labels, the secondary value and notes."
+    },
+    {
+      "key": "accent",
+      "type": "color",
+      "title": "Accent",
+      "default": "#488284",
+      "group": "Card",
+      "visibleWhen": {
+        "key": "palette",
+        "equals": "Custom"
+      },
+      "description": "Activity icons, button text and icons, and the progress bar while Progress bar is Theme."
+    },
+    {
+      "key": "controls",
+      "type": "color",
+      "title": "Controls",
+      "default": "#E8E6E1",
+      "group": "Card",
+      "visibleWhen": {
+        "key": "palette",
+        "equals": "Custom"
+      },
+      "description": "Buttons, the current/target chip and the progress bar's track."
+    },
+    {
+      "key": "opacity",
+      "type": "number",
+      "title": "Background opacity",
+      "default": 100,
+      "min": 20,
+      "max": 100,
+      "step": 5,
+      "unit": "%",
+      "group": "Card",
+      "description": "How solid the card and the +N more button are, in Theme and Custom colors. Lower lets the screensaver show through."
+    },
+    {
+      "key": "bar",
+      "type": "select",
+      "title": "Progress bar",
+      "default": "Theme",
+      "options": [
+        "Theme",
+        "Solid",
+        "Gradient"
+      ],
+      "group": "Progress bar",
+      "description": "Theme uses the accent color. Gradient runs across the whole bar from the start color to the end color, so the color at the tip shows how far along it is."
+    },
+    {
+      "key": "barColor",
+      "type": "color",
+      "title": "Bar color",
+      "default": "#488284",
+      "group": "Progress bar",
+      "visibleWhen": {
+        "key": "bar",
+        "notEquals": "Theme"
+      },
+      "description": "Solid: the bar. Gradient: its empty end."
+    },
+    {
+      "key": "barEnd",
+      "type": "color",
+      "title": "Gradient end",
+      "default": "#749C6F",
+      "group": "Progress bar",
+      "visibleWhen": {
+        "key": "bar",
+        "equals": "Gradient"
+      },
+      "description": "The color at the bar's full end."
+    },
+    {
+      "key": "maxCards",
+      "type": "number",
+      "title": "Maximum cards",
+      "default": 3,
+      "min": 1,
+      "max": 6,
+      "step": 1,
+      "group": "Layout",
+      "description": "The most cards shown at once, in list order. A +N more button counts the rest, and the cards the screen has no room for. Tap it to scroll through every card. Taps on the cards go to the cards; tap elsewhere to wake the kiosk."
+    },
+    {
+      "key": "position",
+      "type": "select",
+      "title": "Position",
+      "default": "Top left",
+      "options": [
+        "Top left",
+        "Top middle",
+        "Top right",
+        "Left middle",
+        "Center",
+        "Right middle",
+        "Bottom left",
+        "Bottom middle",
+        "Bottom right",
+        "Custom"
+      ],
+      "group": "Layout",
+      "description": "Where the cards sit. Top positions grow down, bottom ones grow up and middle ones stay centered. It is not a Kiosk Satellite widget, so pick a spot the screensaver widgets leave empty, or Custom to set its exact position."
+    },
+    {
+      "key": "x",
+      "type": "number",
+      "title": "X",
+      "default": 24,
+      "min": 0,
+      "max": 4096,
+      "step": 1,
+      "unit": "dp",
+      "input": "field",
+      "group": "Layout",
+      "visibleWhen": {
+        "key": "position",
+        "equals": "Custom"
+      },
+      "description": "From the left edge of the screen to the cards, in dp. Kiosk Satellite stops them at the screen edge, so a value too large for the screen leaves them against the far side."
+    },
+    {
+      "key": "y",
+      "type": "number",
+      "title": "Y",
+      "default": 24,
+      "min": 0,
+      "max": 4096,
+      "step": 1,
+      "unit": "dp",
+      "input": "field",
+      "group": "Layout",
+      "visibleWhen": {
+        "key": "position",
+        "equals": "Custom"
+      },
+      "description": "From the top edge of the screen to the first card, in dp. Kiosk Satellite stops them at the screen edge, so a value too large for the screen leaves them against the far side."
+    },
+    {
+      "key": "scale",
+      "type": "number",
+      "title": "Size",
+      "default": 100,
+      "min": 60,
+      "max": 200,
+      "step": 10,
+      "unit": "%",
+      "group": "Layout",
+      "description": "Scales the cards, text included. Buttons keep a 44 dp touch target."
+    }
+  ],
+  "buttons": [
+    {
+      "id": "showPreview",
+      "title": "Show preview",
+      "label": "Show",
+      "group": "Layout",
+      "description": "Shows the cards without the screensaver, for placing them. It shows every enabled activity, even one whose Show condition is not met. Their buttons work in the preview and control the real devices."
+    },
+    {
+      "id": "hidePreview",
+      "title": "Hide preview",
+      "label": "Hide",
+      "group": "Layout"
+    }
+  ],
+  "commands": [
+    {
+      "id": "preview",
+      "title": "Show preview"
+    },
+    {
+      "id": "endPreview",
+      "title": "Hide preview"
+    }
+  ]
+}
