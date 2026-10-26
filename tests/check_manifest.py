@@ -157,6 +157,9 @@ def main():
     if not re.fullmatch(r'[a-z0-9]+(?:-[a-z0-9]+)*', manifest['id']) or len(manifest['id']) > 64:
         fail('id')
     text(manifest, 'name', 80)
+    app_version = manifest.get('minAppVersion')
+    if not isinstance(app_version, str) or not re.fullmatch(r'[0-9]{4}\.(?:[1-9]|1[0-2])\.(?:0|[1-9][0-9]{0,3})', app_version):
+        fail('minAppVersion must name a Kiosk Satellite release such as 2026.10.40; Community Plugins requires it')
     text(manifest, 'description', 1000)
     text(manifest, 'author', 120)
     if not set(manifest['capabilities']) <= CAPABILITIES:

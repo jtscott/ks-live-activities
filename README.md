@@ -38,7 +38,7 @@ Then enable it, open its settings and add an activity under **Activities**. [Exa
 | Home Assistant calls (`ha`), for controls and the unit system | 2026.10.25 |
 | Settings page buttons (Show preview, Hide preview), overlays that follow **Scale UI** | 2026.10.30 |
 
-X, Y, Empty at and Full at are typed number fields from 2026.10.35 and sliders before. Material Design Icons with a number in their name, such as `mdi:battery-80`, draw from 2026.10.35. Kiosk Satellite must have its Home Assistant URL and token set.
+The manifest says so in `minAppVersion`, so Kiosk Satellite 2026.10.40 and later refuse to install or update the plugin on an older release and name both versions; 2026.10.39 and older ignore the field. X, Y, Empty at and Full at are typed number fields from 2026.10.35 and sliders before. Material Design Icons with a number in their name, such as `mdi:battery-80`, draw from 2026.10.35. Kiosk Satellite must have its Home Assistant URL and token set.
 
 ## Tested devices
 
@@ -206,7 +206,7 @@ The plugin talks only to your Home Assistant, through Kiosk Satellite's existing
 
 ## Credits
 
-- [Kiosk Satellite](https://github.com/jxlarrea/kiosk-satellite) by Javier Larrea, whose [plugin SDK and tools](https://github.com/jxlarrea/kiosk-satellite-plugins) (Apache-2.0) are in `sdk/` and `tools/`, taken from that repository on 2026-10-23. `tools/community_plugins.py` adds one change: it checks each DEX file's declared size and reads at most the 4 MB limit, so a small compressed JAR cannot expand in memory before it is refused.
+- [Kiosk Satellite](https://github.com/jxlarrea/kiosk-satellite) by Javier Larrea, whose [plugin SDK and tools](https://github.com/jxlarrea/kiosk-satellite-plugins) (Apache-2.0) are in `sdk/` and `tools/`, taken from that repository on 2026-10-26. `tools/community_plugins.py` adds one change: it checks each DEX file's declared size and reads at most the 4 MB limit, so a small compressed JAR cannot expand in memory before it is refused.
 
 ## Development
 
