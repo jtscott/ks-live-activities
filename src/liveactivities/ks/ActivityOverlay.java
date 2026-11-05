@@ -338,7 +338,8 @@ final class ActivityOverlay implements OverlayFactory {
             header.addView(dot, square(8, 6));
             TextView connection = label(c.connection, 12, 600, live ? "onSurface" : role);
             // Like its dot, straight from the theme: the palette must not recolor whether the values can be trusted.
-            connection.setTextColor(theme.color(live ? "onSurface" : role));
+            // At night the Clock's colors are the theme, so Live reads in its night color; the dot keeps its meaning.
+            connection.setTextColor(live && drawn.style.night ? color("onSurface") : theme.color(live ? "onSurface" : role));
             header.addView(connection);
             card.addView(header, below(0));
 

@@ -3,8 +3,8 @@
   "apiVersion": 1,
   "id": "live-activities",
   "name": "Live Activities",
-  "version": "0.1.1",
-  "minAppVersion": "2026.10.30",
+  "version": "0.2.0",
+  "minAppVersion": "2026.11.1",
   "minAndroidSdk": 26,
   "entryClass": "liveactivities.ks.LiveActivitiesPlugin",
   "description": "Shows Home Assistant live activities as native cards over the screensaver: appliances, vacuums, climate, charging, solar, travel times and any other entity. Each card shows a status, a progress bar or current and target values, a Live or Reconnecting label and optional controls.",
@@ -67,7 +67,8 @@
           "type": "entity",
           "title": "Entity",
           "required": true,
-          "description": "Appliance: its status or operation state sensor. Vacuum: the vacuum. Climate: the thermostat. Custom: any entity. Its state is the card's status unless Values sets one."
+          "description": "Appliance: its status or operation state sensor. Vacuum: the vacuum. Climate: the thermostat. Custom: any entity. Its state is the card's status unless Values sets one.",
+          "includeHidden": true
         },
         {
           "key": "enabled",
@@ -137,7 +138,8 @@
               "key": "entity",
               "type": "entity",
               "title": "Entity",
-              "description": "Empty reads the activity's entity. A finish time counts down; a duration shows as 1h 4m."
+              "description": "Empty reads the activity's entity. A finish time counts down; a duration shows as 1h 4m.",
+              "includeHidden": true
             },
             {
               "key": "attribute",
@@ -224,7 +226,8 @@
             "key": "showWhen",
             "notEquals": "Always"
           },
-          "description": "Empty uses the activity's entity."
+          "description": "Empty uses the activity's entity.",
+          "includeHidden": true
         },
         {
           "key": "whenStates",
@@ -290,7 +293,8 @@
               "Custom"
             ]
           },
-          "description": "A script or button the card can run, such as one that pauses the appliance. Empty for none."
+          "description": "A script or button the card can run, such as one that pauses the appliance. Empty for none.",
+          "includeHidden": true
         },
         {
           "key": "actionLabel",

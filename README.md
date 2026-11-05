@@ -29,7 +29,7 @@ Then enable it, open its settings and add an activity under **Activities**. [Exa
 
 ## Requirements
 
-**Kiosk Satellite 2026.10.30 or later.** The plugin uses:
+**Kiosk Satellite 2026.11.1 or later.** The plugin uses:
 
 | Feature | Since |
 | --- | --- |
@@ -37,6 +37,8 @@ Then enable it, open its settings and add an activity under **Activities**. [Exa
 | Native overlays with insets and offsets, `KsTheme.icon`, list settings, `visibleWhen` and `required` | 2026.10.23 |
 | Home Assistant calls (`ha`), for controls and the unit system | 2026.10.25 |
 | Settings page buttons (Show preview, Hide preview), overlays that follow **Scale UI** | 2026.10.30 |
+| Hidden entities in the entity pickers (`includeHidden`) | 2026.10.41 |
+| The Clock screensaver's Night colors (`screensaver.appearance`) | 2026.11.1 |
 
 The manifest says so in `minAppVersion`, so Kiosk Satellite 2026.10.40 and later refuse to install or update the plugin on an older release and name both versions; 2026.10.39 and older ignore the field. X, Y, Empty at and Full at are typed number fields from 2026.10.35 and sliders before. Material Design Icons with a number in their name, such as `mdi:battery-80`, draw from 2026.10.35. Kiosk Satellite must have its Home Assistant URL and token set.
 
@@ -82,7 +84,7 @@ Cards keep the order of the list and never rearrange themselves by value. **Maxi
 | Field | Notes |
 | --- | --- |
 | Type | **Appliance**, **Vacuum**, **Climate** or **Custom**. A starting point, see below |
-| Entity | The main entity. Its state is the status unless **Values** sets one |
+| Entity | The main entity. Its state is the status unless **Values** sets one. This picker, and those for value, condition and action entities, list hidden entities too, so a sensor hidden from dashboards can still drive a card |
 | Enabled | Off keeps the activity but shows and follows nothing for it |
 | Title, Icon | Empty uses the entity's name and icon, then the type's icon |
 | Layout | **Automatic**, **Status**, **Progress** or **Current/target**. Automatic picks Current/target for Climate, Progress when a Progress value is set, otherwise Status |
@@ -169,7 +171,9 @@ Optional Action `script.dishwasher_pause` with Action label Pause.
 | Progress bar | Theme | **Theme** uses the accent. **Solid** uses Bar color. **Gradient** runs from Bar color to Gradient end across the whole bar, so the color at the tip shows how far along it is |
 | Bar color, Gradient end | `#488284`, `#749C6F` | Kiosk Satellite's teal and sage green |
 
-The Live, Reconnecting and Unavailable colors, and the color of error notes, always follow the theme: they carry meaning, so a custom palette cannot make an unavailable card look live.
+The Live, Reconnecting and Unavailable colors, and the color of error notes, always follow the theme (Live alone takes the night color at night): they carry meaning, so a custom palette cannot make an unavailable card look live.
+
+**At night** the cards follow the Clock screensaver. While it shows its Night colors, every card takes them in place of Theme or Custom colors: the night text color for titles, values, icons, buttons, the Live label and the progress bar, softened for secondary text, outlines and the controls, on the Flip style's card color or the night background. Background opacity and Buttons stay as set. The day colors come back when night ends. If the Clock's **Hide widgets and At a Glance** clears its face at night, or the screen is blanked (Night mode's black screen-off, or the screen-off timer), the cards hide too and stop following their entities until the widgets or the screen come back; **Show preview** still shows them. Status dots, the Reconnecting and Unavailable labels and error notes keep their meaning colors.
 
 ## Layout settings
 

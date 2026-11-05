@@ -37,7 +37,7 @@ final class Settings {
      * Reconnecting and Unavailable colors are never here: they always follow the theme, since they carry meaning.
      */
     static final class Style {
-        static final Style THEMED = new Style(null, null, null, null, null, null, 100, THEME, null, null, false);
+        static final Style THEMED = new Style(null, null, null, null, null, null, 100, THEME, null, null, false, false);
         final Integer background, outline, text, secondaryText, accent, controls;
         /** 20 to 100, for the card and "+N more" backgrounds. */
         final int opacity;
@@ -46,9 +46,11 @@ final class Settings {
         final Integer barColor, barEnd;
         /** Card buttons show only their icon; the label stays as the screen reader's name. */
         final boolean iconOnly;
+        /** The Clock screensaver's Night colors stand in for the theme, Live label included. */
+        final boolean night;
 
         Style(Integer background, Integer outline, Integer text, Integer secondaryText, Integer accent, Integer controls,
-                int opacity, String bar, Integer barColor, Integer barEnd, boolean iconOnly) {
+                int opacity, String bar, Integer barColor, Integer barEnd, boolean iconOnly, boolean night) {
             this.background = background;
             this.outline = outline;
             this.text = text;
@@ -60,10 +62,25 @@ final class Settings {
             this.barColor = barColor;
             this.barEnd = barEnd;
             this.iconOnly = iconOnly;
+            this.night = night;
+        }
+
+        /**
+         * The Clock's Night colors in place of the person's: its color for every text, icon and the bar, softened for
+         * secondary text, outlines and controls, on its card or background color. Opacity and button style stay.
+         */
+        Style night(int text, int background) {
+            return new Style(background, alpha(text, 0x40), text, alpha(text, 0xB3), text, alpha(text, 0x26), opacity, THEME, null, null,
+                iconOnly, true);
+        }
+
+        private static int alpha(int color, int alpha) {
+            return (color & 0x00FFFFFF) | (alpha << 24);
         }
 
         private List<Object> parts() {
-            return java.util.Arrays.<Object>asList(background, outline, text, secondaryText, accent, controls, opacity, bar, barColor, barEnd, iconOnly);
+            return java.util.Arrays.<Object>asList(background, outline, text, secondaryText, accent, controls, opacity, bar, barColor, barEnd, iconOnly,
+                night);
         }
 
         @Override public boolean equals(Object other) { return other instanceof Style && parts().equals(((Style) other).parts()); }
@@ -223,7 +240,7 @@ final class Settings {
             own ? color(values.get("accent")) : null, own ? color(values.get("controls")) : null,
             number(values.get("opacity"), 100, 20, 100), bar,
             THEME.equals(bar) ? null : color(values.get("barColor")), GRADIENT.equals(bar) ? color(values.get("barEnd")) : null,
-            ICON_ONLY.equals(values.get("buttonStyle")));
+            ICON_ONLY.equals(values.get("buttonStyle")), false);
     }
 
     /** Each followed card's own entity: the ones whose integration the Integration heading names. */

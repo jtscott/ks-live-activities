@@ -27,6 +27,8 @@ import me.jxl.kiosk.plugins.PluginHost;
 public final class LiveActivitiesPlugin implements KioskPlugin {
     static final String OVERLAY = "activities";
     static final String SAVER_EVENT = "screensaver.state";
+    /** Whether the Clock screensaver shows its Night colors, and which. */
+    static final String APPEARANCE_EVENT = "screensaver.appearance";
     static final String ENTITY_EVENT = "ha.entity.";
     static final long SENT_MS = 4_000, FAILED_MS = 12_000;
 
@@ -34,6 +36,13 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
     private boolean alive;
     private Settings settings;
     private int saverRevision;
+    private int appearanceRevision;
+    /** [text, background] while the Clock shows its Night colors, else null. */
+    private int[] night;
+    /** The Clock hides its widgets at night (Hide widgets and At a Glance), or the screen is blanked: the cards hide too. */
+    private boolean cleared;
+    /** Hidden while KS says whether the screensaver still runs, after a cleared Clock lost its view. */
+    private boolean held;
     private boolean saverActive;
     private boolean previewing;
     /** Entities subscribed now. An event for any other is late and ignored. */
@@ -64,6 +73,18 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
         alive = true;
         settings = Settings.parse(values);
         host.subscribe(SAVER_EVENT);
+        try {
+            host.subscribe(APPEARANCE_EVENT);
+            final int seen = appearanceRevision;
+            host.executeCommand("getScreensaverAppearance", Collections.<String, Object>emptyMap(), (ok, data, error) -> {
+                synchronized (this) {
+                    if (!alive || seen != appearanceRevision || !ok || !(data instanceof Map)) return;
+                    appearance((Map<?, ?>) data);
+                }
+            });
+        } catch (IllegalArgumentException olderHost) {
+            // KS 2026.10.39 and older ignore minAppVersion and know no such event: the cards keep their own colors.
+        }
         final int revision = saverRevision;
         host.executeCommand("isScreensaverActive", Collections.<String, Object>emptyMap(), (ok, data, error) -> {
             synchronized (this) {
@@ -96,7 +117,11 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
         if (event.equals("ks." + SAVER_EVENT)) {
             saverRevision++;
             saverActive = Boolean.TRUE.equals(payload.get("active"));
+            held = false;
             refresh();
+        } else if (event.equals("ks." + APPEARANCE_EVENT)) {
+            appearanceRevision++;
+            appearance(payload);
         } else if (event.startsWith("ks." + ENTITY_EVENT)) {
             String id = event.substring(("ks." + ENTITY_EVENT).length());
             if (!subscribed.contains(id)) return; // a late event for an entity no card reads now
@@ -172,6 +197,48 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
         refresh();
     }
 
+    private void appearance(Map<?, ?> appearance) {
+        boolean wasCleared = cleared;
+        night = night(appearance);
+        // The Clock hides its widgets at night, or the screen is blanked (Night mode's black screen-off, the screen-off
+        // timer), where KS draws nothing of its own.
+        cleared = Boolean.TRUE.equals(appearance.get("widgetsHidden")) || "blank".equals(appearance.get("view"));
+        // KS clears the view as it dismisses the screensaver and says so only after a few more steps, so a cleared face
+        // losing its view would show the cards for a moment. A Dim screensaver has no view either: until KS answers
+        // whether the screensaver still runs, they stay hidden.
+        held = wasCleared && !cleared && saverActive && appearance.get("view") == null;
+        if (held) {
+            final int revision = saverRevision, seen = appearanceRevision;
+            try {
+                host.executeCommand("isScreensaverActive", Collections.<String, Object>emptyMap(), (ok, data, error) -> {
+                    synchronized (this) {
+                        // A newer state or appearance event has decided already.
+                        if (!alive || revision != saverRevision || seen != appearanceRevision) return;
+                        if (ok) saverActive = Boolean.TRUE.equals(data);
+                        held = false;
+                        refresh();
+                    }
+                });
+            } catch (IllegalStateException busy) {
+                held = false; // Without an answer to wait for, show as before.
+            }
+        }
+        refresh();
+    }
+
+
+    /**
+     * [text, background] from getScreensaverAppearance or its event while the Clock shows Night colors, else null. The
+     * Flip style's card color goes behind the cards, or the night background. Colors are ARGB numbers: one above 2^31
+     * arrives as a Long (or a Double), where intValue would clamp a Double, so the low 32 bits come through longValue.
+     */
+    static int[] night(Map<?, ?> appearance) {
+        Object text = appearance.get("textColor"), card = appearance.get("cardColor"), background = appearance.get("backgroundColor");
+        if (!Boolean.TRUE.equals(appearance.get("night")) || !(text instanceof Number)) return null;
+        Object behind = card instanceof Number ? card : background instanceof Number ? background : null;
+        return new int[] {(int) ((Number) text).longValue(), behind == null ? 0xFF000000 : (int) ((Number) behind).longValue()};
+    }
+
     /** What went wrong, without "code:". A timeout may still have worked, so it says to look rather than retrying. */
     static String failure(String label, String error) {
         String text = error == null ? "" : error;
@@ -196,7 +263,8 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
     /** The overlay and its entities follow the screensaver and the preview: on while either shows, off once both end. */
     private void refresh() {
         if (!alive || host == null) return;
-        boolean wanted = (saverActive || previewing) && !settings.followed.isEmpty();
+        // A Clock cleared of its widgets at night shows no cards either; Show preview still does.
+        boolean wanted = (saverActive && !cleared && !held || previewing) && !settings.followed.isEmpty();
         follow(wanted ? settings.entities : Collections.<String>emptySet());
         if (wanted) {
             lookUp();
@@ -265,7 +333,7 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
             Cards.Card card = card(activity, now);
             if (card != null) cards.add(card);
         }
-        return Cards.board(cards, settings);
+        return Cards.board(cards, settings, night == null ? settings.style : settings.style.night(night[0], night[1]));
     }
 
     private Cards.Card card(Settings.Activity activity, ZonedDateTime now) {

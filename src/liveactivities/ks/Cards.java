@@ -256,8 +256,8 @@ final class Cards {
     }
 
     /** Every card that shows, in settings order, never by value, with Maximum cards as the collapsed limit. */
-    static Board board(List<Card> shown, Settings settings) {
-        return new Board(new ArrayList<>(shown), settings.maxCards, settings.scale, settings.align(), settings.style);
+    static Board board(List<Card> shown, Settings settings, Settings.Style style) {
+        return new Board(new ArrayList<>(shown), settings.maxCards, settings.scale, settings.align(), style);
     }
 
     /**

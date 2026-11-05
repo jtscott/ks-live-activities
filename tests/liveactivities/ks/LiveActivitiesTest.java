@@ -27,7 +27,11 @@ public final class LiveActivitiesTest {
         final List<String> log = new ArrayList<>();
         OverlaySpec spec;
         OverlayFactory factory;
-        CommandCallback saverRead;
+        CommandCallback saverRead, appearanceRead;
+        /** Plays KS 2026.10.39 and older, which ignore minAppVersion and refuse an event they do not know. */
+        boolean older;
+        /** Turns the screensaver read away the way KS does over its request limit. */
+        boolean saverBusy;
         final List<Map<String, Object>> sent = new ArrayList<>();
         final List<CommandCallback> replies = new ArrayList<>();
         boolean busy, subscribeRefused;
@@ -36,10 +40,17 @@ public final class LiveActivitiesTest {
         final List<String> results = new ArrayList<>();
 
         public void executeCommand(String command, Map<String, Object> arguments, CommandCallback callback) {
+            if (command.equals("getScreensaverAppearance")) {
+                assert !older && subscriptions.contains("screensaver.appearance") : "subscribe first, then read";
+                appearanceRead = callback;
+                return;
+            }
             assert command.equals("isScreensaverActive") : command;
+            if (saverBusy) throw new IllegalStateException("too_many_pending");
             saverRead = callback;
         }
         public void subscribe(String event) {
+            if (older && event.equals("screensaver.appearance")) throw new IllegalArgumentException("Unknown event: " + event);
             if (event.startsWith("ha.entity.")) {
                 if (subscribeRefused) throw new IllegalStateException("too_many_requests");
                 long entities = subscriptions.stream().filter(e -> e.startsWith("ha.entity.")).count();
@@ -177,6 +188,7 @@ public final class LiveActivitiesTest {
         touchGate();
         headingAndColors();
         integrationHeading();
+        nightColors();
         System.out.println("LiveActivitiesTest passed in " + TimeZone.getDefault().getID());
     }
 
@@ -400,11 +412,11 @@ public final class LiveActivitiesTest {
         for (String id : new String[] {"sensor.h", "sensor.a", "sensor.g", "sensor.b", "sensor.f", "sensor.c", "sensor.e", "sensor.d"}) {
             eight.add(card(activity("Custom", id, "action", "script.go"), heard(id, entity("available", "1"))));
         }
-        Cards.Board stack = Cards.board(eight, Settings.parse(map("maxCards", 3, "position", "Bottom right", "scale", 120)));
+        Cards.Board stack = Cards.board(eight, Settings.parse(map("maxCards", 3, "position", "Bottom right", "scale", 120)), Settings.Style.THEMED);
         assert stack.cards.size() == 8 && stack.limit == 3 && stack.overflow() == 5 && stack.align.equals("right") && stack.scale == 120;
         assert stack.cards.get(0).key.equals("Custom:sensor.h") && stack.cards.get(7).key.equals("Custom:sensor.d");
         assert stack.cards.get(7).actions.toString().equals("[run]") : "an overflow card keeps its controls for the expanded list";
-        assert Cards.board(eight.subList(0, 2), Settings.parse(map("maxCards", 3))).overflow() == 0;
+        assert Cards.board(eight.subList(0, 2), Settings.parse(map("maxCards", 3)), Settings.Style.THEMED).overflow() == 0;
 
         // Narrow cards: the value column takes at most 45% of what the icon and gaps leave, measured on the card as
         // drawn, so the title and status never lose their width. 240 dp card at 100%: 208 inside, 196 offered.
@@ -590,7 +602,7 @@ public final class LiveActivitiesTest {
         plugin.clock = Clock.fixed(T0, DENVER);
         Map<String, Object> rex = activity("Vacuum", "vacuum.rex", "title", "Rex", "vacuumControls", controls("Pause", "Dock"));
         plugin.start(host, map("activities", rows(rex)));
-        assert host.subscriptions.equals(Collections.singleton("screensaver.state")) && host.log.isEmpty() : "nothing followed until it can show";
+        assert host.subscriptions.equals(new LinkedHashSet<>(Arrays.asList("screensaver.state", "screensaver.appearance"))) && host.log.isEmpty() : "nothing followed until it can show";
         assert !host.statusError && host.status.equals("1 activity. They show with the screensaver.") : host.status;
 
         // The screensaver: one overlay, the entity followed, and a card once Home Assistant speaks.
@@ -1091,5 +1103,163 @@ public final class LiveActivitiesTest {
         // A reply after stop is dropped.
         again.stop();
         flaky.replies.get(1).onResult(true, map("unit_system", map("temperature", "°C")), null);
+    }
+
+    /** At night the Clock's colors stand in for the card colors, in place, and come back with the day. */
+    static void nightColors() {
+        // The read: the Flip card color goes behind the cards, else the night background, else black. Day reads null.
+        assert LiveActivitiesPlugin.night(map("night", false, "textColor", 4294901760.0)) == null;
+        assert LiveActivitiesPlugin.night(map("night", true)) == null : "no text color, nothing to follow";
+        int[] red = LiveActivitiesPlugin.night(map("night", true, "textColor", 4294901760.0, "backgroundColor", 4278190080L, "cardColor", null));
+        assert red[0] == 0xFFFF0000 && red[1] == 0xFF000000 : "a large color as a Double keeps its bits";
+        int[] flip = LiveActivitiesPlugin.night(map("night", true, "textColor", 0xFFFF0000, "backgroundColor", 0xFF000000, "cardColor", 0xFF220000));
+        assert flip[1] == 0xFF220000;
+        assert LiveActivitiesPlugin.night(map("night", true, "textColor", 0xFFFF0000))[1] == 0xFF000000;
+
+        Settings.Style own = Settings.parse(map("palette", "Custom", "background", "#112233", "text", "#FFFFFF", "accent", "#FF8800",
+            "bar", "Gradient", "barColor", "#488284", "barEnd", "#749C6F", "opacity", 62, "buttonStyle", "Icon only")).style;
+        Settings.Style night = own.night(0xFFFF0000, 0xFF220000);
+        assert night.night && night.background == 0xFF220000 && night.text == 0xFFFF0000 && night.accent == 0xFFFF0000;
+        assert night.secondaryText == 0xB3FF0000 && night.outline == 0x40FF0000 && night.controls == 0x26FF0000;
+        assert night.bar.equals("Theme") && night.barColor == null && night.barEnd == null : "the bar takes the night color";
+        assert night.opacity == 62 && night.iconOnly : "opacity and button style stay";
+        assert !own.night && !night.equals(own);
+
+        // Subscribed before it reads; the read and later events recolor the cards with no rebuild and no Home Assistant traffic.
+        Map<String, Object> washer = activity("Appliance", "sensor.washer_current_status", "title", "Washer");
+        Host host = new Host();
+        LiveActivitiesPlugin plugin = new LiveActivitiesPlugin();
+        plugin.start(host, map("activities", rows(washer), "palette", "Custom", "accent", "#FF8800"));
+        assert host.subscriptions.contains("screensaver.appearance") && host.appearanceRead != null;
+        host.saverRead.onResult(true, true, null);
+        hear(plugin, "sensor.washer_current_status", "available", "running");
+        assert !board(plugin).style.night && board(plugin).style.accent == 0xFFFF8800;
+        int lines = host.log.size();
+        Map<String, Object> dark = map("view", "clock", "night", true, "textColor", 4294901760.0, "backgroundColor", 4278190080.0, "cardColor", null,
+            "widgetsHidden", false);
+        host.appearanceRead.onResult(true, dark, null);
+        assert board(plugin).style.night && board(plugin).style.accent == 0xFFFF0000 && board(plugin).style.background == 0xFF000000;
+        assert host.log.size() == lines && host.sent.isEmpty() : "no overlay rebuild, no call";
+        plugin.onEvent("ks.screensaver.appearance", map("view", "clock", "night", false, "textColor", 0xFFFFFFFF, "backgroundColor", null));
+        assert !board(plugin).style.night && board(plugin).style.accent == 0xFFFF8800 : "day brings the person's colors back";
+        plugin.configure(map("activities", rows(washer), "palette", "Custom", "accent", "#00FF00"));
+        assert board(plugin).style.accent == 0xFF00FF00;
+        plugin.onEvent("ks.screensaver.appearance", dark);
+        plugin.configure(map("activities", rows(washer), "palette", "Custom", "accent", "#0000FF"));
+        assert board(plugin).style.night && board(plugin).style.accent == 0xFFFF0000 : "a settings change keeps the night colors";
+
+        // A Clock cleared of its widgets at night hides the cards and stops following; Show preview still shows them.
+        Map<String, Object> cleared = new HashMap<>(dark);
+        cleared.put("widgetsHidden", true);
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() : host.log;
+        plugin.execute("preview", new HashMap<String, Object>());
+        assert host.log.get(host.log.size() - 1).equals("show") && board(plugin).style.night : "preview shows, in night colors";
+        plugin.execute("endPreview", new HashMap<String, Object>());
+        assert host.log.get(host.log.size() - 1).equals("hide");
+        plugin.onEvent("ks.screensaver.appearance", map("view", "clock", "night", false, "textColor", 0xFFFFFFFF, "widgetsHidden", false));
+        assert host.log.get(host.log.size() - 1).equals("show") && host.entities().contains("sensor.washer_current_status") : "back with the day";
+
+        // Dismissing a cleared Clock: KS clears the view before it says the screensaver ended. The cards stay hidden and
+        // follow nothing while KS answers whether it still runs.
+        Map<String, Object> gone = map("view", null, "night", false, "textColor", null, "backgroundColor", null, "cardColor", null,
+            "widgetsHidden", false);
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        int hidden = host.log.size();
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        assert host.log.size() == hidden && host.entities().isEmpty() : "no show, no subscribe while KS answers: " + host.log;
+        host.saverRead.onResult(true, false, null);
+        plugin.onEvent("ks.screensaver.state", map("active", false));
+        assert host.log.size() == hidden && host.entities().isEmpty();
+        // A Dim screensaver has no view either: when KS says it still runs, the cards come back.
+        plugin.onEvent("ks.screensaver.state", map("active", true));
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        assert host.log.get(host.log.size() - 1).equals("hide");
+        host.saverRead.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("show") && host.entities().contains("sensor.washer_current_status");
+        // The state event is newer than the read: it ends the wait, and the late answer changes nothing.
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        PluginHost.CommandCallback stale = host.saverRead;
+        plugin.onEvent("ks.screensaver.state", map("active", false));
+        hidden = host.log.size();
+        stale.onResult(true, true, null);
+        assert host.log.size() == hidden && host.entities().isEmpty() : "a read sent before the state event loses to it";
+        // Two waits in a row: the first answer is older than the state events between them, so only the second counts.
+        plugin.onEvent("ks.screensaver.state", map("active", true));
+        assert host.log.get(host.log.size() - 1).equals("show") : "the state event ended the wait";
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        PluginHost.CommandCallback first = host.saverRead;
+        plugin.onEvent("ks.screensaver.state", map("active", false));
+        plugin.onEvent("ks.screensaver.state", map("active", true));
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        first.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() : "the older answer is ignored";
+        host.saverRead.onResult(true, false, null);
+        assert host.log.get(host.log.size() - 1).equals("hide");
+        // With the read turned away there is no answer to wait for, so the cards show as before.
+        plugin.onEvent("ks.screensaver.state", map("active", true));
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        host.saverBusy = true;
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        host.saverBusy = false;
+        assert host.log.get(host.log.size() - 1).equals("show");
+
+        // The blanked screen (Night mode's black screen-off, the screen-off timer) hides the cards too; leaving it for
+        // the Clock shows them, and its dismissal waits like a cleared Clock's.
+        Map<String, Object> blank = map("view", "blank", "night", false, "textColor", null, "backgroundColor", null, "cardColor", null,
+            "widgetsHidden", false);
+        plugin.onEvent("ks.screensaver.appearance", blank);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() : "no cards on a blanked screen";
+        plugin.onEvent("ks.screensaver.appearance", dark);
+        assert host.log.get(host.log.size() - 1).equals("show") && host.entities().contains("sensor.washer_current_status");
+        plugin.onEvent("ks.screensaver.appearance", blank);
+        hidden = host.log.size();
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        host.saverRead.onResult(true, false, null);
+        plugin.onEvent("ks.screensaver.state", map("active", false));
+        assert host.log.size() == hidden && host.entities().isEmpty() : "dismissing a blanked screen shows nothing";
+
+        // Two waits with no state event between them: the first answer is older than the appearance events after it.
+        plugin.onEvent("ks.screensaver.state", map("active", true));
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        PluginHost.CommandCallback earlier = host.saverRead;
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        earlier.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() : "the older answer is ignored";
+        host.saverRead.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("show") : "the newer answer decides";
+
+        // A late read loses to an event that came after it was sent.
+        Host late = new Host();
+        LiveActivitiesPlugin second = new LiveActivitiesPlugin();
+        second.start(late, map("activities", rows(washer)));
+        late.saverRead.onResult(true, true, null);
+        second.onEvent("ks.screensaver.appearance", dark);
+        late.appearanceRead.onResult(true, map("night", false, "textColor", 0xFFFFFFFF), null);
+        assert board(second).style.night : "the later event wins";
+        second.stop();
+        // A failed read or one after stop changes nothing.
+        Host failed = new Host();
+        LiveActivitiesPlugin third = new LiveActivitiesPlugin();
+        third.start(failed, map("activities", rows(washer)));
+        failed.appearanceRead.onResult(false, null, "unknown_command");
+        assert !board(third).style.night;
+        third.stop();
+        failed.appearanceRead.onResult(true, dark, null);
+        assert !board(third).style.night : "a read answered after stop is dropped";
+
+        // KS 2026.10.39 and older refuse the event: the plugin starts anyway and keeps its own colors.
+        Host older = new Host();
+        older.older = true;
+        LiveActivitiesPlugin fourth = new LiveActivitiesPlugin();
+        fourth.start(older, map("activities", rows(washer)));
+        older.saverRead.onResult(true, true, null);
+        assert older.appearanceRead == null && !board(fourth).style.night && older.log.contains("show");
     }
 }
