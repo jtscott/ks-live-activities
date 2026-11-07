@@ -510,6 +510,7 @@ final class ActivityOverlay implements OverlayFactory {
             Drawable mark = tinted(theme.icon(action.icon, "primary"), "primary");
             if (mark != null) {
                 ImageView image = new ImageView(getContext());
+                image.setScaleType(ImageView.ScaleType.FIT_XY);
                 image.setImageDrawable(mark);
                 button.addView(image, square(iconOnly ? 22 : 18, iconOnly ? 0 : 6));
             }
@@ -619,6 +620,8 @@ final class ActivityOverlay implements OverlayFactory {
 
         private ImageView icon(String name, String role) {
             ImageView image = new ImageView(getContext());
+            // Give the path its final bounds; scaling the canvas blurs it on older Android.
+            image.setScaleType(ImageView.ScaleType.FIT_XY);
             Drawable drawable = theme.icon(name, role);
             image.setImageDrawable(tinted(drawable != null ? drawable : theme.icon("mdi:information-outline", role), role));
             return image;
