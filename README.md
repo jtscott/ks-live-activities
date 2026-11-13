@@ -29,7 +29,7 @@ Then enable it, open its settings and add an activity under **Activities**. [Exa
 
 ## Requirements
 
-**Kiosk Satellite 2026.11.1 or later.** The plugin uses:
+**Kiosk Satellite 2026.11.12 or later.** Version 0.2.1 is the last that works with Kiosk Satellite before 2026.11.12. The plugin uses:
 
 | Feature | Since |
 | --- | --- |
@@ -39,6 +39,8 @@ Then enable it, open its settings and add an activity under **Activities**. [Exa
 | Settings page buttons (Show preview, Hide preview), overlays that follow **Scale UI** | 2026.10.30 |
 | Hidden entities in the entity pickers (`includeHidden`) | 2026.10.41 |
 | The Clock screensaver's Night colors (`screensaver.appearance`) | 2026.11.1 |
+| Whether Now Playing is on screen (`nowPlaying` in `screensaver.appearance`) | 2026.11.10 |
+| Taps on the cards that leave the screensaver up; before, a tap on a card or its buttons dismissed the screensaver and the cards with it | 2026.11.12 |
 
 The manifest says so in `minAppVersion`, so Kiosk Satellite 2026.10.40 and later refuse to install or update the plugin on an older release and name both versions; 2026.10.39 and older ignore the field. X, Y, Empty at and Full at are typed number fields from 2026.10.35 and sliders before. Material Design Icons with a number in their name, such as `mdi:battery-80`, draw from 2026.10.35. Kiosk Satellite must have its Home Assistant URL and token set.
 
@@ -175,6 +177,8 @@ The Live, Reconnecting and Unavailable colors, and the color of error notes, alw
 
 **At night** the cards follow the Clock screensaver. While it shows its Night colors, every card takes them in place of Theme or Custom colors: the night text color for titles, values, icons, buttons, the Live label and the progress bar, softened for secondary text, outlines and the controls, on the Flip style's card color or the night background. Background opacity and Buttons stay as set. The day colors come back when night ends. If the Clock's **Hide widgets and At a Glance** clears its face at night, or the screen is blanked (Night mode's black screen-off, or the screen-off timer), the cards hide too and stop following their entities until the widgets or the screen come back; **Show preview** still shows them. Status dots, the Reconnecting and Unavailable labels and error notes keep their meaning colors.
 
+**During Now Playing** the cards hide while the player is on screen over the screensaver, whether it fills the screen or shares it with the screensaver, and paused or not, so they never cover its controls. They stop following their entities until the player leaves; music playing with no player on screen does not hide them. **Show preview** still shows them.
+
 ## Layout settings
 
 | Setting | Default | Notes |
@@ -206,11 +210,12 @@ The plugin talks only to your Home Assistant, through Kiosk Satellite's existing
 - A finish time in the past shows as a time of day or a date, not as an elapsed time.
 - The expanded list starts closed again whenever Kiosk Satellite rebuilds the view, such as after a theme or Scale UI change.
 - A tap on a card outside its buttons does nothing; it does not wake the kiosk.
+- An alarm ringing on the Clock screensaver draws its Snooze and Stop buttons under the cards, because Kiosk Satellite does not tell plugins about it yet. The plugin hides for an `alarm` field in `screensaver.appearance`, which a proposed Kiosk Satellite change adds (Screensaver Agenda's `upstream/`).
 - Text is English.
 
 ## Credits
 
-- [Kiosk Satellite](https://github.com/jxlarrea/kiosk-satellite) by Javier Larrea, whose [plugin SDK and tools](https://github.com/jxlarrea/kiosk-satellite-plugins) (Apache-2.0) are in `sdk/` and `tools/`, taken from that repository on 2026-10-26, with `sdk/` refreshed on 2026-11-05. `tools/community_plugins.py` adds one change: it checks each DEX file's declared size and reads at most the 4 MB limit, so a small compressed JAR cannot expand in memory before it is refused.
+- [Kiosk Satellite](https://github.com/jxlarrea/kiosk-satellite) by Javier Larrea, whose [plugin SDK and tools](https://github.com/jxlarrea/kiosk-satellite-plugins) (Apache-2.0) are in `sdk/` and `tools/`, taken from that repository on 2026-10-26 and last refreshed on 2026-11-13. `tools/community_plugins.py` adds one change: it checks each DEX file's declared size and reads at most the 4 MB limit, so a small compressed JAR cannot expand in memory before it is refused.
 
 ## Development
 
@@ -224,6 +229,14 @@ python3 tools/build.py --android-platform 35
 ```
 
 For testing a local build, install `dist/live-activities-<version>.zip` with **Plugin Manager > Developer Tools > Install from ZIP**, on the kiosk or in the remote admin. Then enable it.
+
+### Checks on a device for 0.3.0
+
+- Over a running screensaver, tap a card, one of its buttons, `+N more` and **Show fewer**. Each must act and leave the screensaver up; a tap off the cards must still dismiss it.
+- With a Clock screensaver running, start music so Now Playing takes over, full screen and, with **Show alongside screensaver** on, shared. The cards must hide in both. Pause the music: they stay hidden while the paused player stays on screen, and come back over the Clock when KS puts the player away. Closing the player with its own button ends the screensaver instead, and the cards must not appear on the way out.
+- At night with the Clock's widgets showing, dismiss the screensaver: the cards must go without turning to day colors first.
+- Turn on **Launch Now Playing when music starts playing**, let the screensaver open for the music, then stop playback. KS closes the player and ends the session: the cards must not appear on the way back to the dashboard.
+- At night with **Hide widgets and At a Glance** on, open and close Now Playing over the Clock: the cards must stay hidden. **Show preview** must show them over the player.
 
 Releases are built by GitHub Actions: publishing a GitHub release tagged `vX.Y.Z` runs `.github/workflows/build.yml`, which tests, builds and attaches the manifest, ZIP and checksum. The tag sets the version.
 

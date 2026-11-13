@@ -1,10 +1,10 @@
 """Check the Community Plugins submission checks and index without the network."""
 import hashlib
 import io
-import tracemalloc
 import json
 import struct
 import tempfile
+import tracemalloc
 import unittest
 from pathlib import Path
 import zipfile
@@ -134,7 +134,7 @@ class RepositoryTest(unittest.TestCase):
 class ManifestTest(unittest.TestCase):
     def test_valid_manifest(self):
         cp.validate_manifest(manifest())
-        cp.validate_manifest(manifest(capabilities=['camera', 'barcode', 'ma']))
+        cp.validate_manifest(manifest(capabilities=['camera', 'barcode', 'ma', 'player']))
         cp.validate_manifest(manifest(capabilities=['screensaver', 'screensaver.mode']))
         cp.validate_manifest(manifest(settings=[{'key': 'tap', 'title': 'Tap', 'type': 'action', 'default': {}}]))
 

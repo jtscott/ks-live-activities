@@ -189,6 +189,8 @@ public final class LiveActivitiesTest {
         headingAndColors();
         integrationHeading();
         nightColors();
+        nowPlaying();
+        viewGoneAndAlarm();
         System.out.println("LiveActivitiesTest passed in " + TimeZone.getDefault().getID());
     }
 
@@ -1158,6 +1160,8 @@ public final class LiveActivitiesTest {
         plugin.execute("endPreview", new HashMap<String, Object>());
         assert host.log.get(host.log.size() - 1).equals("hide");
         plugin.onEvent("ks.screensaver.appearance", map("view", "clock", "night", false, "textColor", 0xFFFFFFFF, "widgetsHidden", false));
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() : "hidden until KS says it still runs";
+        host.saverRead.onResult(true, true, null);
         assert host.log.get(host.log.size() - 1).equals("show") && host.entities().contains("sensor.washer_current_status") : "back with the day";
 
         // Dismissing a cleared Clock: KS clears the view before it says the screensaver ended. The cards stay hidden and
@@ -1200,13 +1204,43 @@ public final class LiveActivitiesTest {
         assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() : "the older answer is ignored";
         host.saverRead.onResult(true, false, null);
         assert host.log.get(host.log.size() - 1).equals("hide");
-        // With the read turned away there is no answer to wait for, so the cards show as before.
+        // With the read turned away (the plugin's own requests fill KS's budget) the cards stay hidden and ask again a
+        // second later until KS takes it.
+        List<Runnable> retries = new ArrayList<>();
+        plugin.later = (task, millis) -> {
+            assert millis == 1_000;
+            retries.add(task);
+        };
         plugin.onEvent("ks.screensaver.state", map("active", true));
         plugin.onEvent("ks.screensaver.appearance", cleared);
         host.saverBusy = true;
         plugin.onEvent("ks.screensaver.appearance", gone);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() && retries.size() == 1;
+        retries.remove(0).run();
+        assert retries.size() == 1 && host.log.get(host.log.size() - 1).equals("hide") : "refused again, asks again";
         host.saverBusy = false;
+        retries.remove(0).run();
+        assert retries.isEmpty() && host.log.get(host.log.size() - 1).equals("hide");
+        host.saverRead.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("show") : "the retried answer decides";
+        // After 15 retries it stops and waits for KS's next screensaver event.
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        host.saverBusy = true;
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        for (int i = 0; i < 15; i++) retries.remove(0).run();
+        assert retries.isEmpty() && host.log.get(host.log.size() - 1).equals("hide") : "bounded";
+        host.saverBusy = false;
+        plugin.onEvent("ks.screensaver.state", map("active", true));
         assert host.log.get(host.log.size() - 1).equals("show");
+        // A retry that a newer event overtook sends nothing.
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        host.saverBusy = true;
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        host.saverBusy = false;
+        PluginHost.CommandCallback before = host.saverRead;
+        plugin.onEvent("ks.screensaver.state", map("active", true));
+        retries.remove(0).run();
+        assert host.saverRead == before && retries.isEmpty() : "no read for a decided hold";
 
         // The blanked screen (Night mode's black screen-off, the screen-off timer) hides the cards too; leaving it for
         // the Clock shows them, and its dismissal waits like a cleared Clock's.
@@ -1215,6 +1249,8 @@ public final class LiveActivitiesTest {
         plugin.onEvent("ks.screensaver.appearance", blank);
         assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() : "no cards on a blanked screen";
         plugin.onEvent("ks.screensaver.appearance", dark);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty();
+        host.saverRead.onResult(true, true, null);
         assert host.log.get(host.log.size() - 1).equals("show") && host.entities().contains("sensor.washer_current_status");
         plugin.onEvent("ks.screensaver.appearance", blank);
         hidden = host.log.size();
@@ -1261,5 +1297,132 @@ public final class LiveActivitiesTest {
         fourth.start(older, map("activities", rows(washer)));
         older.saverRead.onResult(true, true, null);
         assert older.appearanceRead == null && !board(fourth).style.night && older.log.contains("show");
+    }
+
+    static void nowPlaying() {
+        Map<String, Object> washer = activity("Appliance", "sensor.washer_current_status", "title", "Washer");
+        Map<String, Object> clock = map("view", "clock", "night", false, "widgetsHidden", false, "nowPlaying", false,
+            "nowPlayingShared", false);
+        Map<String, Object> player = new HashMap<>(clock);
+        player.put("nowPlaying", true);
+        Map<String, Object> beside = new HashMap<>(player);
+        beside.put("nowPlayingShared", true);
+
+        // Enabled while the player is open: nothing shows and nothing is followed.
+        Host host = new Host();
+        LiveActivitiesPlugin plugin = new LiveActivitiesPlugin();
+        plugin.start(host, map("activities", rows(washer)));
+        host.appearanceRead.onResult(true, player, null);
+        host.saverRead.onResult(true, true, null);
+        assert !host.log.contains("show") && host.entities().isEmpty() : host.log;
+
+        // The player closes onto the Clock: once KS says the screensaver still runs, the cards show and follow again.
+        plugin.onEvent("ks.screensaver.appearance", clock);
+        assert !host.log.contains("show") && host.entities().isEmpty() : "hidden until KS answers";
+        // A new look before the answer (night starting) keeps the hold and asks again; only the newer answer counts.
+        PluginHost.CommandCallback first = host.saverRead;
+        Map<String, Object> dusk = new HashMap<>(clock);
+        dusk.put("night", true);
+        dusk.put("textColor", 0xFFFF0000);
+        plugin.onEvent("ks.screensaver.appearance", dusk);
+        assert !host.log.contains("show") && host.saverRead != first : "still held, asked again";
+        first.onResult(true, true, null);
+        assert !host.log.contains("show") : "the older answer is ignored";
+        host.saverRead.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("show") && host.entities().contains("sensor.washer_current_status");
+        hear(plugin, "sensor.washer_current_status", "available", "running");
+
+        // The player beside the screensaver hides them too, and a repeat changes nothing.
+        plugin.onEvent("ks.screensaver.appearance", beside);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty();
+        int hidden = host.log.size();
+        plugin.onEvent("ks.screensaver.appearance", player);
+        assert host.log.size() == hidden && host.entities().isEmpty();
+
+        // Show preview still shows them over the player; ending it hides them again.
+        plugin.execute("preview", new HashMap<String, Object>());
+        assert host.log.get(host.log.size() - 1).equals("show") && host.entities().contains("sensor.washer_current_status");
+        plugin.execute("endPreview", new HashMap<String, Object>());
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty();
+
+        // The player closing onto a night Clock with its widgets hidden keeps them hidden.
+        Map<String, Object> cleared = map("view", "clock", "night", true, "textColor", 0xFFFF0000, "widgetsHidden", true,
+            "nowPlaying", false);
+        hidden = host.log.size();
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        assert host.log.size() == hidden && host.entities().isEmpty();
+
+        // A session that ends from the player clears the view first: hidden while KS answers, and through the end.
+        plugin.onEvent("ks.screensaver.appearance", player);
+        plugin.onEvent("ks.screensaver.appearance", map("view", null, "night", false, "widgetsHidden", false, "nowPlaying", false));
+        assert host.log.size() == hidden && host.entities().isEmpty() : host.log;
+        host.saverRead.onResult(true, false, null);
+        plugin.onEvent("ks.screensaver.state", map("active", false));
+        assert host.log.size() == hidden && host.entities().isEmpty();
+
+        // Playback ending a session KS started for the player: KS drops nowPlaying while the view still shows, then
+        // clears the view, then says the screensaver ended. The cards never come back on the way.
+        plugin.onEvent("ks.screensaver.state", map("active", true));
+        plugin.onEvent("ks.screensaver.appearance", player);
+        hidden = host.log.size();
+        plugin.onEvent("ks.screensaver.appearance", clock);
+        assert host.log.size() == hidden && host.entities().isEmpty() : "no show while KS answers: " + host.log;
+        PluginHost.CommandCallback ending = host.saverRead;
+        plugin.onEvent("ks.screensaver.appearance", map("view", null, "night", false, "widgetsHidden", false, "nowPlaying", false));
+        assert host.log.size() == hidden && host.entities().isEmpty() : "the hold outlasts a second appearance";
+        assert host.saverRead != ending : "and asks again";
+        ending.onResult(true, true, null);
+        assert host.log.size() == hidden && host.entities().isEmpty() : "the older answer is ignored";
+        host.saverRead.onResult(true, false, null);
+        plugin.onEvent("ks.screensaver.state", map("active", false));
+        assert host.log.size() == hidden && host.entities().isEmpty();
+        plugin.stop();
+    }
+
+    static void viewGoneAndAlarm() {
+        Map<String, Object> washer = activity("Appliance", "sensor.washer_current_status", "title", "Washer");
+        Map<String, Object> dark = map("view", "clock", "night", true, "textColor", 0xFFFF0000, "backgroundColor", 0xFF000000,
+            "widgetsHidden", false, "nowPlaying", false);
+        Map<String, Object> gone = map("view", null, "night", false, "widgetsHidden", false, "nowPlaying", false);
+        Host host = new Host();
+        LiveActivitiesPlugin plugin = new LiveActivitiesPlugin();
+        plugin.start(host, map("activities", rows(washer)));
+        host.appearanceRead.onResult(true, dark, null);
+        host.saverRead.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("show") && board(plugin).style.night;
+
+        // Dismissing a night Clock that shows its widgets: the view goes first, with the night colors. The cards hide
+        // then, not after a moment in day colors, and stay hidden through the end.
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty() : host.log;
+        int hidden = host.log.size();
+        host.saverRead.onResult(true, false, null);
+        plugin.onEvent("ks.screensaver.state", map("active", false));
+        assert host.log.size() == hidden && host.entities().isEmpty();
+
+        // A schedule turning the Clock into Dim drops the view too: KS says the screensaver still runs, so they come back.
+        plugin.onEvent("ks.screensaver.state", map("active", true));
+        plugin.onEvent("ks.screensaver.appearance", dark);
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        assert host.log.get(host.log.size() - 1).equals("hide");
+        host.saverRead.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("show") && !board(plugin).style.night : "Dim has no night colors";
+        int shown = host.log.size();
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        assert host.log.size() == shown : "no view to lose";
+
+        // An alarm showing on the screensaver hides them, and they come back once KS says it still runs.
+        Map<String, Object> clock = map("view", "clock", "night", false, "widgetsHidden", false, "nowPlaying", false);
+        Map<String, Object> alarm = new HashMap<>(clock);
+        alarm.put("alarm", true);
+        plugin.onEvent("ks.screensaver.appearance", clock);
+        assert host.log.get(host.log.size() - 1).equals("show") : "a view arriving is no reason to wait";
+        plugin.onEvent("ks.screensaver.appearance", alarm);
+        assert host.log.get(host.log.size() - 1).equals("hide") && host.entities().isEmpty();
+        plugin.onEvent("ks.screensaver.appearance", clock);
+        assert host.log.get(host.log.size() - 1).equals("hide");
+        host.saverRead.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("show") && host.entities().contains("sensor.washer_current_status");
+        plugin.stop();
     }
 }

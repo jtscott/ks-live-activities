@@ -12,6 +12,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import android.os.Handler;
+import android.os.Looper;
 import me.jxl.kiosk.plugins.KioskPlugin;
 import me.jxl.kiosk.plugins.OverlaySpec;
 import me.jxl.kiosk.plugins.PluginHost;
@@ -39,10 +41,15 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
     private int appearanceRevision;
     /** [text, background] while the Clock shows its Night colors, else null. */
     private int[] night;
-    /** The Clock hides its widgets at night (Hide widgets and At a Glance), or the screen is blanked: the cards hide too. */
+    /**
+     * The Clock hides its widgets at night (Hide widgets and At a Glance), the screen is blanked, or Now Playing or an
+     * alarm is on screen: the cards hide too.
+     */
     private boolean cleared;
-    /** Hidden while KS says whether the screensaver still runs, after a cleared Clock lost its view. */
+    /** Hidden while KS says whether the screensaver still runs, after whatever cleared the cards let go or the view went. */
     private boolean held;
+    /** The last appearance had a view, so a null view next means the screensaver is ending or turning Dim. */
+    private boolean viewed;
     private boolean saverActive;
     private boolean previewing;
     /** Entities subscribed now. An event for any other is late and ignored. */
@@ -67,6 +74,12 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
     private Cards.Board posted;
     /** Null for the device's clock and current zone. Tests fix the time and the zone. */
     Clock clock;
+    /** Runs a task later on the main thread. The tests run it by hand. */
+    Later later = (task, millis) -> new Handler(Looper.getMainLooper()).postDelayed(task, millis);
+
+    interface Later {
+        void run(Runnable task, long millis);
+    }
 
     @Override public synchronized void start(PluginHost host, Map<String, Object> values) {
         this.host = host;
@@ -198,32 +211,48 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
     }
 
     private void appearance(Map<?, ?> appearance) {
-        boolean wasCleared = cleared;
+        boolean wasCleared = cleared, wasViewed = viewed;
+        Object view = appearance.get("view");
+        viewed = view != null;
         night = night(appearance);
         // The Clock hides its widgets at night, or the screen is blanked (Night mode's black screen-off, the screen-off
-        // timer), where KS draws nothing of its own.
-        cleared = Boolean.TRUE.equals(appearance.get("widgetsHidden")) || "blank".equals(appearance.get("view"));
-        // KS clears the view as it dismisses the screensaver and says so only after a few more steps, so a cleared face
-        // losing its view would show the cards for a moment. A Dim screensaver has no view either: until KS answers
-        // whether the screensaver still runs, they stay hidden.
-        held = wasCleared && !cleared && saverActive && appearance.get("view") == null;
-        if (held) {
-            final int revision = saverRevision, seen = appearanceRevision;
-            try {
-                host.executeCommand("isScreensaverActive", Collections.<String, Object>emptyMap(), (ok, data, error) -> {
-                    synchronized (this) {
-                        // A newer state or appearance event has decided already.
-                        if (!alive || revision != saverRevision || seen != appearanceRevision) return;
-                        if (ok) saverActive = Boolean.TRUE.equals(data);
-                        held = false;
-                        refresh();
-                    }
-                });
-            } catch (IllegalStateException busy) {
-                held = false; // Without an answer to wait for, show as before.
-            }
-        }
+        // timer), where KS draws nothing of its own. Now Playing, alone or beside the screensaver, keeps its controls
+        // clear, and so does an alarm showing on it (KS releases that report it).
+        cleared = Boolean.TRUE.equals(appearance.get("widgetsHidden")) || "blank".equals(view)
+            || Boolean.TRUE.equals(appearance.get("nowPlaying")) || Boolean.TRUE.equals(appearance.get("alarm"));
+        // KS undoes what hid the cards, and clears the view, a few steps before it says the screensaver ended: a
+        // dismissed face loses its view and its night colors, and Now Playing ending its own session drops nowPlaying
+        // while the view still shows. A Dim screensaver has no view either. So whenever the cards would come back or the
+        // view goes, they stay hidden until KS answers whether the screensaver still runs; each appearance in the
+        // meantime asks again, and only the latest answer counts.
+        held = !cleared && saverActive && (wasCleared || held || (wasViewed && view == null));
+        if (held) ask(host, saverRevision, appearanceRevision, 0);
         refresh();
+    }
+
+    /**
+     * Asks KS whether the screensaver still runs, for the hold. KS refuses while the plugin's own requests fill its
+     * budget, and each of those answers or times out within 10 seconds, so retries a second apart get through. After 15
+     * the cards wait for KS's next screensaver event.
+     */
+    private void ask(final PluginHost host, final int revision, final int seen, final int attempt) {
+        try {
+            host.executeCommand("isScreensaverActive", Collections.<String, Object>emptyMap(), (ok, data, error) -> {
+                synchronized (this) {
+                    // A newer state event has decided, or a newer appearance asked again.
+                    if (!alive || revision != saverRevision || seen != appearanceRevision) return;
+                    if (ok) saverActive = Boolean.TRUE.equals(data);
+                    held = false;
+                    refresh();
+                }
+            });
+        } catch (IllegalStateException busy) {
+            if (attempt < 15) later.run(() -> {
+                synchronized (this) {
+                    if (alive && revision == saverRevision && seen == appearanceRevision) ask(host, revision, seen, attempt + 1);
+                }
+            }, 1_000);
+        }
     }
 
 
@@ -263,7 +292,7 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
     /** The overlay and its entities follow the screensaver and the preview: on while either shows, off once both end. */
     private void refresh() {
         if (!alive || host == null) return;
-        // A Clock cleared of its widgets at night shows no cards either; Show preview still does.
+        // A Clock cleared of its widgets at night, or Now Playing, shows no cards either; Show preview still does.
         boolean wanted = (saverActive && !cleared && !held || previewing) && !settings.followed.isEmpty();
         follow(wanted ? settings.entities : Collections.<String>emptySet());
         if (wanted) {
