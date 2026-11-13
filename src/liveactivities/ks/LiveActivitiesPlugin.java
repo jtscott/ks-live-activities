@@ -232,8 +232,8 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
 
     /**
      * Asks KS whether the screensaver still runs, for the hold. KS refuses while the plugin's own requests fill its
-     * budget, and each of those answers or times out within 10 seconds, so retries a second apart get through. After 15
-     * the cards wait for KS's next screensaver event.
+     * budget. Each of those answers or times out within 30 seconds (Home Assistant calls; KS commands within 10) and
+     * frees its slot once its callback has run, so retries a second apart get through. After 40 the cards wait for KS's next screensaver event.
      */
     private void ask(final PluginHost host, final int revision, final int seen, final int attempt) {
         try {
@@ -247,7 +247,7 @@ public final class LiveActivitiesPlugin implements KioskPlugin {
                 }
             });
         } catch (IllegalStateException busy) {
-            if (attempt < 15) later.run(() -> {
+            if (attempt < 40) later.run(() -> {
                 synchronized (this) {
                     if (alive && revision == saverRevision && seen == appearanceRevision) ask(host, revision, seen, attempt + 1);
                 }

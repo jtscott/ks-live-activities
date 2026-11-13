@@ -1223,11 +1223,22 @@ public final class LiveActivitiesTest {
         assert retries.isEmpty() && host.log.get(host.log.size() - 1).equals("hide");
         host.saverRead.onResult(true, true, null);
         assert host.log.get(host.log.size() - 1).equals("show") : "the retried answer decides";
-        // After 15 retries it stops and waits for KS's next screensaver event.
+        // Home Assistant calls hold the budget for up to 30 seconds: a slot freeing after 30 refusals still gets through,
+        // with no screensaver event to help.
         plugin.onEvent("ks.screensaver.appearance", cleared);
         host.saverBusy = true;
         plugin.onEvent("ks.screensaver.appearance", gone);
-        for (int i = 0; i < 15; i++) retries.remove(0).run();
+        for (int i = 0; i < 30; i++) retries.remove(0).run();
+        host.saverBusy = false;
+        retries.remove(0).run();
+        assert retries.isEmpty() && host.log.get(host.log.size() - 1).equals("hide");
+        host.saverRead.onResult(true, true, null);
+        assert host.log.get(host.log.size() - 1).equals("show") : "recovers on its own";
+        // After 40 retries it stops and waits for KS's next screensaver event.
+        plugin.onEvent("ks.screensaver.appearance", cleared);
+        host.saverBusy = true;
+        plugin.onEvent("ks.screensaver.appearance", gone);
+        for (int i = 0; i < 40; i++) retries.remove(0).run();
         assert retries.isEmpty() && host.log.get(host.log.size() - 1).equals("hide") : "bounded";
         host.saverBusy = false;
         plugin.onEvent("ks.screensaver.state", map("active", true));
